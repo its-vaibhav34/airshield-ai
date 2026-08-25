@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from ml.predict import predict_aqi
 from backend.aqi_features import get_aqi_history_features
+from backend.fire_features import get_fire_feature
 
 
 # ============================================================
@@ -26,8 +27,6 @@ class AQIRequest(BaseModel):
 
     area: str
     date: date
-
-    fireCount: float
 
     temperature_2m_mean: float
     temperature_2m_max: float
@@ -122,12 +121,31 @@ def predict(request: AQIRequest):
 
 
     # --------------------------------------------------------
-    # Automatically calculate historical AQI features
+    # Historical AQI features
     # --------------------------------------------------------
 
     try:
 
         historical_features = get_aqi_history_features(
+            request.area,
+            target_date
+        )
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+    # --------------------------------------------------------
+    # Fire feature
+    # --------------------------------------------------------
+
+    try:
+
+        fire_feature = get_fire_feature(
             request.area,
             target_date
         )
@@ -147,10 +165,13 @@ def predict(request: AQIRequest):
     input_data = {
 
         "area": request.area,
+
         "season": season,
 
-        "fireCount": request.fireCount,
+        # Automatically retrieved
+        **fire_feature,
 
+        # Weather
         "temperature_2m_mean":
             request.temperature_2m_mean,
 
@@ -172,11 +193,12 @@ def predict(request: AQIRequest):
         "surface_pressure_mean":
             request.surface_pressure_mean,
 
+        # Date features
         "month": month,
         "day_of_year": day_of_year,
         "year": year,
 
-        # Automatically generated historical AQI features
+        # Historical AQI
         **historical_features
     }
 
