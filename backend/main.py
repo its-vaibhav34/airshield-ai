@@ -4,10 +4,22 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from ml.predict import predict_aqi
-from backend.aqi_features import get_aqi_history_features
-from backend.fire_features import get_fire_feature
-from backend.weather_features import get_weather_features
-from backend.cpcb_service import get_live_cpcb_data
+
+from backend.aqi_features import (
+    get_aqi_history_features
+)
+
+from backend.fire_features import (
+    get_fire_feature
+)
+
+from backend.weather_features import (
+    get_weather_features
+)
+
+from backend.cpcb_service import (
+    get_live_cpcb_data
+)
 
 
 # ============================================================
@@ -177,18 +189,18 @@ def predict(request: AQIRequest):
 
         "season": season,
 
-        # Fire
+        # Fire features
         **fire_feature,
 
-        # Weather
+        # Weather features
         **weather_features,
 
-        # Date
+        # Date features
         "month": month,
         "day_of_year": day_of_year,
         "year": year,
 
-        # Historical AQI
+        # Historical AQI features
         **historical_features
     }
 
@@ -197,9 +209,23 @@ def predict(request: AQIRequest):
     # Predict AQI
     # --------------------------------------------------------
 
-    prediction = predict_aqi(input_data)
+    try:
 
-    category = get_aqi_category(prediction)
+        prediction = predict_aqi(
+            input_data
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"AQI prediction failed: {str(e)}"
+        )
+
+
+    category = get_aqi_category(
+        prediction
+    )
 
 
     # --------------------------------------------------------
@@ -212,8 +238,10 @@ def predict(request: AQIRequest):
 
         "date": str(request.date),
 
-        "predicted_aqi":
-            round(prediction, 2),
+        "predicted_aqi": round(
+            prediction,
+            2
+        ),
 
         "category": category
     }
@@ -246,4 +274,11 @@ def live_aqi(area: str):
         raise HTTPException(
             status_code=502,
             detail=str(e)
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Live AQI service failed: {str(e)}"
         )
