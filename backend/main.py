@@ -7,6 +7,7 @@ from ml.predict import predict_aqi
 from backend.aqi_features import get_aqi_history_features
 from backend.fire_features import get_fire_feature
 from backend.weather_features import get_weather_features
+from backend.cpcb_service import get_live_cpcb_data
 
 
 # ============================================================
@@ -15,7 +16,7 @@ from backend.weather_features import get_weather_features
 
 app = FastAPI(
     title="AirShield AI",
-    description="AQI Prediction API",
+    description="AQI Prediction and Live Air Quality API",
     version="1.0.0"
 )
 
@@ -216,3 +217,33 @@ def predict(request: AQIRequest):
 
         "category": category
     }
+
+
+# ============================================================
+# LIVE CPCB AIR QUALITY
+# ============================================================
+
+@app.get("/live-aqi/{area}")
+def live_aqi(area: str):
+
+    try:
+
+        live_data = get_live_cpcb_data(
+            area
+        )
+
+        return live_data
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    except RuntimeError as e:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
+        )
