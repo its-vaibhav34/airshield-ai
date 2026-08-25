@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from ml.predict import predict_aqi
 from backend.aqi_features import get_aqi_history_features
 from backend.fire_features import get_fire_feature
+from backend.weather_features import get_weather_features
 
 
 # ============================================================
@@ -27,18 +28,6 @@ class AQIRequest(BaseModel):
 
     area: str
     date: date
-
-    temperature_2m_mean: float
-    temperature_2m_max: float
-    temperature_2m_min: float
-
-    relative_humidity_2m_mean: float
-
-    precipitation_sum: float
-
-    wind_speed_10m_max: float
-
-    surface_pressure_mean: float
 
 
 # ============================================================
@@ -159,6 +148,25 @@ def predict(request: AQIRequest):
 
 
     # --------------------------------------------------------
+    # Weather features
+    # --------------------------------------------------------
+
+    try:
+
+        weather_features = get_weather_features(
+            request.area,
+            target_date
+        )
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+    # --------------------------------------------------------
     # Build final model input
     # --------------------------------------------------------
 
@@ -168,32 +176,13 @@ def predict(request: AQIRequest):
 
         "season": season,
 
-        # Automatically retrieved
+        # Fire
         **fire_feature,
 
         # Weather
-        "temperature_2m_mean":
-            request.temperature_2m_mean,
+        **weather_features,
 
-        "temperature_2m_max":
-            request.temperature_2m_max,
-
-        "temperature_2m_min":
-            request.temperature_2m_min,
-
-        "relative_humidity_2m_mean":
-            request.relative_humidity_2m_mean,
-
-        "precipitation_sum":
-            request.precipitation_sum,
-
-        "wind_speed_10m_max":
-            request.wind_speed_10m_max,
-
-        "surface_pressure_mean":
-            request.surface_pressure_mean,
-
-        # Date features
+        # Date
         "month": month,
         "day_of_year": day_of_year,
         "year": year,
