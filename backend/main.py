@@ -9,12 +9,12 @@ from backend.aqi_features import (
     get_aqi_history_features
 )
 
-from backend.fire_features import (
-    get_fire_feature
+from backend.fire_forecast import (
+    get_future_fire_feature
 )
 
-from backend.weather_features import (
-    get_weather_features
+from backend.weather_forecast import (
+    get_future_weather_features
 )
 
 from backend.cpcb_service import (
@@ -107,11 +107,11 @@ def get_season(month: int):
 @app.post("/predict")
 def predict(request: AQIRequest):
 
+    target_date = request.date
+
     # --------------------------------------------------------
     # Date features
     # --------------------------------------------------------
-
-    target_date = request.date
 
     month = target_date.month
 
@@ -124,6 +124,8 @@ def predict(request: AQIRequest):
 
     # --------------------------------------------------------
     # Historical AQI features
+    #
+    # These use ONLY AQI observations before target date.
     # --------------------------------------------------------
 
     try:
@@ -142,12 +144,15 @@ def predict(request: AQIRequest):
 
 
     # --------------------------------------------------------
-    # Fire feature
+    # Future fire estimate
+    #
+    # IMPORTANT:
+    # Do NOT use actual future fire observations.
     # --------------------------------------------------------
 
     try:
 
-        fire_feature = get_fire_feature(
+        fire_feature = get_future_fire_feature(
             request.area,
             target_date
         )
@@ -159,14 +164,24 @@ def predict(request: AQIRequest):
             detail=str(e)
         )
 
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Future fire estimation failed: {str(e)}"
+        )
+
 
     # --------------------------------------------------------
-    # Weather features
+    # Future weather forecast
+    #
+    # IMPORTANT:
+    # Weather must come from forecast data.
     # --------------------------------------------------------
 
     try:
 
-        weather_features = get_weather_features(
+        weather_features = get_future_weather_features(
             request.area,
             target_date
         )
@@ -176,26 +191,44 @@ def predict(request: AQIRequest):
         raise HTTPException(
             status_code=400,
             detail=str(e)
+        )
+
+    except RuntimeError as e:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Weather forecast failed: {str(e)}"
         )
 
 
     # --------------------------------------------------------
     # Build final model input
+    #
+    # Must match the saved model's expected features.
     # --------------------------------------------------------
 
     input_data = {
 
+        # Location
         "area": request.area,
 
+        # Season
         "season": season,
 
-        # Fire features
+        # Future-safe fire estimate
         **fire_feature,
 
-        # Weather features
+        # Future weather forecast
         **weather_features,
 
-        # Date features
+        # Calendar features
         "month": month,
         "day_of_year": day_of_year,
         "year": year,
@@ -222,6 +255,10 @@ def predict(request: AQIRequest):
             detail=f"AQI prediction failed: {str(e)}"
         )
 
+
+    # --------------------------------------------------------
+    # AQI category
+    # --------------------------------------------------------
 
     category = get_aqi_category(
         prediction

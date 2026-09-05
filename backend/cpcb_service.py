@@ -314,9 +314,17 @@ def get_live_cpcb_data(area: str):
     # Current pollutant observations
     # --------------------------------------------------------
 
-    pollutant_data = get_live_pollutants(
-        area
-    )
+    try:
+        pollutant_data = get_live_pollutants(
+            area
+        )
+
+    except ValueError:
+        pollutant_data = {
+            "station": None,
+            "last_update": None,
+            "pollutants": {}
+        }
 
     # --------------------------------------------------------
     # Prefer station name from pollutant API when available

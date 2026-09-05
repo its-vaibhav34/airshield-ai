@@ -1,78 +1,8 @@
-import os
 import pandas as pd
 
-
-# ============================================================
-# PATH
-# ============================================================
-
-BASE_DIR = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
-)
-
-AQI_PATH = os.path.join(
-    BASE_DIR,
-    "ml",
-    "data",
-    "processed",
-    "cleaned_punjab_aqi.csv"
-)
-
-
-# ============================================================
-# MODEL AREAS
-# ============================================================
-
-MODEL_AREAS = [
-    "Amritsar",
-    "Bathinda",
-    "Jalandhar",
-    "Ludhiana",
-    "Patiala",
-    "Rupnagar"
-]
-
-
-# ============================================================
-# LOAD AQI DATA
-# ============================================================
-
-aqi_df = pd.read_csv(AQI_PATH)
-
-aqi_df["date"] = pd.to_datetime(
-    aqi_df["date"]
-)
-
-# Keep only areas used by final model
-aqi_df = aqi_df[
-    aqi_df["area"].isin(MODEL_AREAS)
-].copy()
-
-
-# ============================================================
-# SORT
-# ============================================================
-
-aqi_df = (
-    aqi_df
-    .sort_values(["area", "date"])
-    .reset_index(drop=True)
-)
-
-
-# ============================================================
-# CREATE DATE-BASED AQI LOOKUP
-# ============================================================
-
-aqi_lookup = (
-    aqi_df
-    .drop_duplicates(
-        subset=["area", "date"],
-        keep="last"
-    )
-    .set_index(["area", "date"])["aqi_value"]
+from backend.aqi_history import (
+    MODEL_AREAS,
+    get_aqi_history,
 )
 
 
@@ -85,11 +15,12 @@ def get_aqi_history_features(
     target_date
 ):
 
-    target_date = pd.Timestamp(
-        target_date
-    )
+    # --------------------------------------------------------
+    # Validate area
+    # --------------------------------------------------------
 
     if area not in MODEL_AREAS:
+
         raise ValueError(
             f"Area '{area}' is not supported. "
             f"Supported areas: {MODEL_AREAS}"
@@ -97,13 +28,38 @@ def get_aqi_history_features(
 
 
     # --------------------------------------------------------
-    # Get all historical AQI before target date
+    # Normalize target date
     # --------------------------------------------------------
 
-    area_history = aqi_df[
-        (aqi_df["area"] == area) &
-        (aqi_df["date"] < target_date)
+    target_date = pd.Timestamp(
+        target_date
+    )
+
+
+    # --------------------------------------------------------
+    # Load unified AQI history
+    #
+    # This combines:
+    #
+    # 1. Historical AQI dataset
+    # 2. CPCB live AQI history
+    # --------------------------------------------------------
+
+    all_history = get_aqi_history()
+
+
+    # --------------------------------------------------------
+    # Get only this area's observations BEFORE target date
+    #
+    # Target day's AQI is NEVER included.
+    # --------------------------------------------------------
+
+    area_history = all_history[
+        (all_history["area"] == area)
+        &
+        (all_history["date"] < target_date)
     ].copy()
+
 
     area_history = (
         area_history
@@ -112,15 +68,20 @@ def get_aqi_history_features(
     )
 
 
+    # --------------------------------------------------------
+    # Need at least some historical observations
+    # --------------------------------------------------------
+
     if area_history.empty:
+
         raise ValueError(
-            f"No historical AQI available for "
+            f"No AQI history available for "
             f"{area} before {target_date.date()}"
         )
 
 
     # --------------------------------------------------------
-    # Date → AQI dictionary
+    # Date → AQI lookup
     # --------------------------------------------------------
 
     history = (
@@ -129,13 +90,24 @@ def get_aqi_history_features(
     )
 
 
-    # --------------------------------------------------------
-    # Calendar-date lags
-    # --------------------------------------------------------
+    # ========================================================
+    # CALENDAR-DATE LAGS
+    # ========================================================
 
-    lag_1_date = target_date - pd.Timedelta(days=1)
-    lag_3_date = target_date - pd.Timedelta(days=3)
-    lag_7_date = target_date - pd.Timedelta(days=7)
+    lag_1_date = (
+        target_date
+        - pd.Timedelta(days=1)
+    )
+
+    lag_3_date = (
+        target_date
+        - pd.Timedelta(days=3)
+    )
+
+    lag_7_date = (
+        target_date
+        - pd.Timedelta(days=7)
+    )
 
 
     aqi_lag_1d = history.get(
@@ -154,14 +126,18 @@ def get_aqi_history_features(
     )
 
 
-    # --------------------------------------------------------
-    # Rolling historical AQI
+    # ========================================================
+    # ROLLING FEATURES
     #
-    # Use only observations BEFORE target date.
-    # Current target day's AQI is never included.
-    # --------------------------------------------------------
+    # IMPORTANT:
+    # These use only observations BEFORE target_date.
+    #
+    # We do NOT include target day's AQI.
+    # ========================================================
 
-    past_values = area_history["aqi_value"]
+    past_values = (
+        area_history["aqi_value"]
+    )
 
 
     aqi_rolling_3d = (
@@ -183,14 +159,29 @@ def get_aqi_history_features(
     )
 
 
-    return {
-        "aqi_lag_1d": float(aqi_lag_1d),
-        "aqi_lag_3d": float(aqi_lag_3d),
-        "aqi_lag_7d": float(aqi_lag_7d),
+    # ========================================================
+    # RETURN MODEL FEATURES
+    # ========================================================
 
-        "aqi_rolling_3d": float(aqi_rolling_3d),
-        "aqi_rolling_7d": float(aqi_rolling_7d),
-        "aqi_rolling_14d": float(aqi_rolling_14d)
+    return {
+
+        "aqi_lag_1d":
+            float(aqi_lag_1d),
+
+        "aqi_lag_3d":
+            float(aqi_lag_3d),
+
+        "aqi_lag_7d":
+            float(aqi_lag_7d),
+
+        "aqi_rolling_3d":
+            float(aqi_rolling_3d),
+
+        "aqi_rolling_7d":
+            float(aqi_rolling_7d),
+
+        "aqi_rolling_14d":
+            float(aqi_rolling_14d),
     }
 
 
@@ -200,20 +191,80 @@ def get_aqi_history_features(
 
 if __name__ == "__main__":
 
+    print("=" * 60)
+    print("AQI FUTURE FEATURE TEST")
+    print("=" * 60)
+
+
+    # --------------------------------------------------------
+    # Test 1: Historical date
+    # --------------------------------------------------------
+
     test_area = "Amritsar"
     test_date = "2024-01-15"
+
+
+    print("\nHistorical test")
+    print("-" * 60)
+
+    print(
+        "Area:",
+        test_area
+    )
+
+    print(
+        "Date:",
+        test_date
+    )
+
 
     features = get_aqi_history_features(
         test_area,
         test_date
     )
 
-    print("=" * 60)
-    print("AQI HISTORICAL FEATURES")
-    print("=" * 60)
-
-    print("Area:", test_area)
-    print("Date:", test_date)
 
     for key, value in features.items():
-        print(f"{key}: {value}")
+
+        print(
+            f"{key}: {value}"
+        )
+
+
+    # --------------------------------------------------------
+    # Test 2: Future date
+    # --------------------------------------------------------
+
+    future_date = "2026-08-28"
+
+
+    print("\nFuture test")
+    print("-" * 60)
+
+    print(
+        "Area:",
+        test_area
+    )
+
+    print(
+        "Date:",
+        future_date
+    )
+
+
+    future_features = get_aqi_history_features(
+        test_area,
+        future_date
+    )
+
+
+    for key, value in future_features.items():
+
+        print(
+            f"{key}: {value}"
+        )
+
+
+    print("=" * 60)
+    print("TEST COMPLETE")
+    print("=" * 60)
